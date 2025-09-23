@@ -1,285 +1,341 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Optimized Dark Mode Code 39 Scanner</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Code 39 Barcode Scanner (Single File)</title>
   <style>
-    /* Base dark mode styling */
-    body {
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      line-height: 1.6;
-      margin: 0;
-      padding: 0;
-      background: #121212;
-      color: #e0e0e0;
+    :root{
+      --bg:#0b0b0d; --surface:#101012; --muted:#9aa0a6; --accent:#00d084; --danger:#ff6b6b; --glass: rgba(255,255,255,0.03);
     }
-    header {
-      background: #1f1f1f;
-      color: #fff;
-      padding: 30px 20px;
-      text-align: center;
-      border-bottom: 2px solid #2d2d2d;
-    }
-    header h1 {
-      margin: 0;
-      font-size: 2em;
-      color: #4db8ff;
-    }
-    main {
-      max-width: 900px;
-      margin: 20px auto;
-      padding: 25px;
-      background: #1e1e1e;
-      border-radius: 10px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
-    }
-    h2 {
-      color: #4db8ff;
-      border-bottom: 1px solid #2d2d2d;
-      padding-bottom: 5px;
-      margin-top: 20px;
-    }
-    button, input[type="file"] {
-      margin: 5px;
-      padding: 10px 15px;
-      font-size: 14px;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-    button {
-      background: #4db8ff;
-      color: #121212;
-    }
-    button:disabled {
-      background: #555;
-      cursor: not-allowed;
-    }
-    input[type="file"] {
-      background: #2b2b2b;
-      color: #e0e0e0;
-    }
-    #video {
-      position: relative;
-      width: 100%;
-      max-width: 640px;
-      height: 360px;
-      margin: 20px auto;
-      background: #000;
-      overflow: hidden;
-      border-radius: 10px;
-      box-shadow: 0 0 15px rgba(0,0,0,0.5);
-    }
-    #video canvas {
-      position: absolute !important;
-      top: 0;
-      left: 0;
-      width: 100% !important;
-      height: 100% !important;
-      pointer-events: none;
-    }
-    #highlight {
-      position: absolute;
-      border: 3px solid #00ff00;
-      display: none;
-      z-index: 10;
-      pointer-events: none;
-      border-radius: 6px;
-    }
-    #result {
-      margin-top: 10px;
-      font-weight: bold;
-      color: #00ff00;
-    }
-    table {
-      margin: 20px auto;
-      border-collapse: collapse;
-      width: 80%;
-      background: #1e1e1e;
-      color: #e0e0e0;
-    }
-    th, td {
-      border: 1px solid #555;
-      padding: 8px;
-    }
-    th {
-      background: #2d2d2d;
-    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#060607 0%, var(--bg) 100%);color:#e6eef3;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial}
+    .app{max-width:1100px;margin:18px auto;padding:18px;display:grid;grid-template-columns:1fr 380px;gap:14px}
+    header{grid-column:1/3;display:flex;align-items:center;gap:12px}
+    h1{font-size:18px;margin:0}
+    p.lead{margin:0;color:var(--muted);font-size:13px}
+
+    .camera-card{background:var(--surface);border-radius:12px;padding:12px;position:relative;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,0.6)}
+    video{width:100%;height:100%;object-fit:cover;border-radius:8px;background:#000}
+    .overlay{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:flex-start;padding:12px;pointer-events:none}
+    .scan-box{width:100%;height:100%;border-radius:8px;box-shadow:inset 0 0 0 2px rgba(255,255,255,0.03)}
+    .flash{position:absolute;inset:0;background:linear-gradient(90deg, rgba(0,0,0,0), rgba(0,0,0,0.35));opacity:0;transition:opacity .35s}
+    .pulse{animation:pulse 700ms ease-out}
+    @keyframes pulse{0%{opacity:0.95}100%{opacity:0}}
+
+    .controls{display:flex;flex-direction:column;gap:10px}
+    .controls .row{display:flex;gap:8px;align-items:center}
+    label{font-size:13px;color:var(--muted)}
+    select,input[type=checkbox]{background:var(--glass);border:none;padding:8px;border-radius:8px;color:inherit}
+    button{background:linear-gradient(180deg,var(--accent),#00b36a);border:none;color:#021012;padding:10px 12px;border-radius:10px;font-weight:600;cursor:pointer}
+    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted);}
+
+    .side{background:var(--surface);border-radius:12px;padding:12px;height:fit-content}
+    .list{max-height:58vh;overflow:auto;margin-top:8px;padding-right:6px}
+    .item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);margin-bottom:8px}
+    .code{font-family:monospace;font-weight:700}
+    .time{font-size:12px;color:var(--muted)}
+    footer{grid-column:1/3;margin-top:6px;color:var(--muted);font-size:12px}
+
+    /* small screens */
+    @media(max-width:880px){.app{grid-template-columns:1fr;}.side{order:2}.camera-card{order:1}}
   </style>
 </head>
 <body>
-  <header>
-    <h1>Code 39 Scanner</h1>
-    <p>Optimized dark mode scanner with beep & highlight</p>
-  </header>
+  <div class="app">
+    <header>
+      <div style="flex:1">
+        <h1>Code 39 Scanner — Mobile + Desktop</h1>
+        <p class="lead">Fast single-file scanner. Uses native <code>BarcodeDetector</code> when available, falls back to ZXing. Visual feedback + CSV export.</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="startBtn">Start</button>
+        <button id="stopBtn" class="ghost" disabled>Stop</button>
+      </div>
+    </header>
 
-  <main>
-    <h2>Scanner</h2>
-    <div>
-      <button id="startBtn">Start Scanner</button>
-      <button id="stopBtn" disabled>Stop Scanner</button>
-      <input id="fileInput" type="file" accept="image/*">
-      <button id="downloadBtn" disabled>Download CSV</button>
-    </div>
+    <section class="camera-card">
+      <div style="position:relative;height:60vh;min-height:320px">
+        <video id="video" playsinline autoplay muted></video>
+        <canvas id="overlayCanvas" style="position:absolute;inset:0;pointer-events:none"></canvas>
+        <div id="flash" class="flash"></div>
+      </div>
 
-    <div id="video">
-      <div id="highlight"></div>
-    </div>
+      <div style="display:flex;gap:10px;margin-top:12px;align-items:center;justify-content:space-between">
+        <div style="display:flex;gap:10px;align-items:center">
+          <label>Camera:</label>
+          <select id="cameraSelect"></select>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <label><input type="checkbox" id="beepToggle" checked /> Beep on scan</label>
+          <label><input type="checkbox" id="dedupeToggle" checked /> Debounce duplicates</label>
+        </div>
+      </div>
+    </section>
 
-    <div id="result">—</div>
+    <aside class="side">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>Scanned Codes</strong>
+        <div style="display:flex;gap:8px">
+          <button id="exportBtn" class="ghost">Export CSV</button>
+          <button id="clearBtn" class="ghost">Clear</button>
+        </div>
+      </div>
 
-    <table id="logTable">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Barcode</th>
-          <th>Timestamp</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </main>
+      <div class="list" id="scannedList" aria-live="polite"></div>
+      <div style="margin-top:8px;color:var(--muted);font-size:13px">
+        <div>Detected format: <span id="detectorInfo">—</span></div>
+        <div style="margin-top:6px">Tip: allow camera access and prefer the rear camera on mobile for best results.</div>
+      </div>
+    </aside>
 
-  <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
+    <footer>Built for speed. Let me know if you want keyboard-input (USB barcode gun) support, or JSON export.</footer>
+  </div>
+
+  <!-- ZXing fallback (only used if native BarcodeDetector isn't available) -->
+  <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+  <audio id="beepAudio" src="data:audio/wav;base64,UklGRhQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YWQAAAAA"></audio>
   <script>
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn  = document.getElementById('stopBtn');
-    const resultEl = document.getElementById('result');
-    const fileInput = document.getElementById('fileInput');
-    const downloadBtn = document.getElementById('downloadBtn');
-    const videoTarget = document.getElementById('video');
-    const logTableBody = document.querySelector('#logTable tbody');
-    const highlight = document.getElementById('highlight');
+    (function(){
+      const video = document.getElementById('video');
+      const overlay = document.getElementById('overlayCanvas');
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      const cameraSelect = document.getElementById('cameraSelect');
+      const scannedList = document.getElementById('scannedList');
+      const exportBtn = document.getElementById('exportBtn');
+      const clearBtn = document.getElementById('clearBtn');
+      const beepToggle = document.getElementById('beepToggle');
+      const dedupeToggle = document.getElementById('dedupeToggle');
+      const flash = document.getElementById('flash');
+      const detectorInfo = document.getElementById('detectorInfo');
+      const beepAudio = document.getElementById('beepAudio');
 
-    let scanning = false;
-    let logData = [];
+      let stream = null;
+      let scanning = false;
+      let lastScanned = null;
+      let scannedItems = []; // {code, time}
+      let zxingReader = null;
+      let useNative = false;
+      let nativeDetector = null;
+      const overlayCtx = overlay.getContext('2d');
 
-    // Beep sound
-    const beep = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=');
-
-    function logResult(barcode) {
-      const timestamp = new Date().toLocaleString();
-      resultEl.textContent = `Last: ${barcode}`;
-      logData.push({ barcode, timestamp });
-      renderTable();
-      downloadBtn.disabled = false;
-      beep.play();
-    }
-
-    function renderTable() {
-      logTableBody.innerHTML = '';
-      logData.forEach((row, i) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${i+1}</td>
-          <td>${row.barcode}</td>
-          <td>${row.timestamp}</td>
-        `;
-        logTableBody.appendChild(tr);
-      });
-    }
-
-    function startScanner() {
-      if (scanning) return;
-
-      Quagga.init({
-        inputStream: {
-          name: "Live",
-          type: "LiveStream",
-          target: videoTarget,
-          constraints: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 360 } },
-          area: { top: "10%", right: "10%", bottom: "10%", left: "10%" }
-        },
-        locator: { patchSize: "medium", halfSample: true },
-        numOfWorkers: 1,
-        decoder: { readers: ["code_39_reader"] },
-        locate: true
-      }, function(err) {
-        if (err) { console.error(err); resultEl.textContent = 'Error: '+(err.message||err); return; }
-        Quagga.start();
-        scanning = true;
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
-        resultEl.textContent = 'Scanning for Code 39...';
-      });
-
-      Quagga.onDetected(onDetectedHandler);
-      Quagga.onProcessed(drawHighlight);
-    }
-
-    function stopScanner() {
-      if (!scanning) return;
-      Quagga.stop();
-      Quagga.offDetected(onDetectedHandler);
-      Quagga.offProcessed(drawHighlight);
-      scanning = false;
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-      resultEl.textContent = 'Scanner stopped.';
-      videoTarget.innerHTML = '<div id="highlight"></div>';
-    }
-
-    let lastCode = null;
-    function onDetectedHandler(data) {
-      const code = data?.codeResult?.code;
-      if (code && code !== lastCode) {
-        lastCode = code;
-        logResult(code);
-        setTimeout(() => lastCode = null, 1000); // avoid duplicates for 1s
+      // adjust canvas size to video
+      function fitCanvas(){
+        overlay.width = video.clientWidth;
+        overlay.height = video.clientHeight;
       }
-    }
 
-    function drawHighlight(result) {
-      if (!result || !result.box) { highlight.style.display = 'none'; return; }
-      const [xMin, yMin, xMax, yMax] = [
-        Math.min(...result.box.map(p => p[0])),
-        Math.min(...result.box.map(p => p[1])),
-        Math.max(...result.box.map(p => p[0])),
-        Math.max(...result.box.map(p => p[1]))
-      ];
-      highlight.style.display = 'block';
-      highlight.style.left = xMin + 'px';
-      highlight.style.top = yMin + 'px';
-      highlight.style.width = (xMax - xMin) + 'px';
-      highlight.style.height = (yMax - yMin) + 'px';
-    }
+      async function listCameras(){
+        try{
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const cams = devices.filter(d => d.kind === 'videoinput');
+          cameraSelect.innerHTML = '';
+          cams.forEach((c,i)=>{
+            const opt = document.createElement('option');
+            opt.value = c.deviceId;
+            opt.textContent = c.label || `Camera ${i+1}`;
+            cameraSelect.appendChild(opt);
+          });
+        }catch(err){console.warn('Could not list devices',err)}
+      }
 
-    fileInput.addEventListener('change', e => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function() {
-        Quagga.decodeSingle({
-          src: reader.result,
-          numOfWorkers: 0,
-          inputStream: { size: 800 },
-          decoder: { readers: ["code_39_reader"] }
-        }, function(result) {
-          if (result && result.codeResult) {
-            logResult(result.codeResult.code);
-          } else { resultEl.textContent = 'No Code 39 barcode detected in image.'; }
+      function flashPulse(){
+        flash.classList.add('pulse');
+        setTimeout(()=>flash.classList.remove('pulse'),800);
+      }
+
+      function addScanned(code){
+        const now = new Date();
+        if(dedupeToggle.checked){
+          if(scannedItems.length && scannedItems[0].code === code) return; // simple dedupe recent
+        }
+        scannedItems.unshift({code, time: now.toISOString()});
+        renderList();
+      }
+
+      function renderList(){
+        scannedList.innerHTML = '';
+        scannedItems.forEach(it=>{
+          const div = document.createElement('div');
+          div.className = 'item';
+          div.innerHTML = `<div><div class="code">${escapeHtml(it.code)}</div><div class="time">${new Date(it.time).toLocaleString()}</div></div><div style="text-align:right;font-size:12px;color:var(--muted)"><button data-code="${escapeHtml(it.code)}" class="ghost small">copy</button></div>`;
+          const btn = div.querySelector('button');
+          btn.addEventListener('click',()=>{navigator.clipboard.writeText(it.code)});
+          scannedList.appendChild(div);
         });
-      };
-      reader.readAsDataURL(file);
-    });
+      }
 
-    function downloadCSV() {
-      let csv = "Index,Barcode,Timestamp\n";
-      logData.forEach((row,i) => csv += `${i+1},${row.barcode},${row.timestamp}\n`);
-      const blob = new Blob([csv], { type:'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = "barcodes.csv";
-      a.click();
-      URL.revokeObjectURL(url);
-    }
+      function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
-    startBtn.addEventListener('click', startScanner);
-    stopBtn.addEventListener('click', stopScanner);
-    downloadBtn.addEventListener('click', downloadCSV);
+      function downloadCSV(){
+        if(!scannedItems.length) return alert('No scanned items to export');
+        const header = ['code','timestamp'];
+        const rows = scannedItems.map(r=>[`"${r.code.replace(/"/g,'""')}"`,r.time]);
+        const csv = [header.join(','), ...rows.map(r=>r.join(','))].join('\n');
+        const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `scanned_code39_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      }
 
-    window.addEventListener('beforeunload', () => { if (scanning) stopScanner(); });
+      async function startCamera(deviceId){
+        stopCamera();
+        const constraints = {video: deviceId ? {deviceId:{exact:deviceId}} : {facingMode:{ideal:'environment'}} , audio:false};
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        await video.play();
+        fitCanvas();
+        window.addEventListener('resize', fitCanvas);
+      }
+
+      function stopCamera(){
+        if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+        video.pause(); video.srcObject = null;
+        window.removeEventListener('resize', fitCanvas);
+      }
+
+      async function setupNative(){
+        try{
+          if(!('BarcodeDetector' in window)) return false;
+          const supported = await BarcodeDetector.getSupportedFormats();
+          // prefer code_39 if available
+          if(supported.includes('code_39') || supported.includes('code 39') || supported.includes('code-39')){
+            nativeDetector = new BarcodeDetector({formats:['code_39']});
+            detectorInfo.textContent = 'Native BarcodeDetector (Code 39)';
+            useNative = true;
+            return true;
+          }
+        }catch(e){console.warn('native detector check failed',e)}
+        return false;
+      }
+
+      async function continuousScanNative(){
+        if(!nativeDetector) return;
+        const scanFrame = async()=>{
+          if(!scanning) return;
+          try{
+            const results = await nativeDetector.detect(video);
+            if(results && results.length){
+              results.forEach(r=>{
+                if(r.format && r.rawValue){
+                  handleDetected(r.rawValue, r.boundingBox);
+                }
+              });
+            }
+          }catch(e){/* ignore */}
+          requestAnimationFrame(scanFrame);
+        };
+        scanFrame();
+      }
+
+      function drawBox(box){
+        fitCanvas();
+        overlayCtx.clearRect(0,0,overlay.width,overlay.height);
+        if(!box) return;
+        overlayCtx.strokeStyle = 'rgba(0,208,132,0.95)';
+        overlayCtx.lineWidth = 3;
+        overlayCtx.beginPath();
+        // boundingBox may have x,y,width,height or polygon
+        if(box.x!==undefined){
+          const sx = (box.x / video.videoWidth) * overlay.width;
+          const sy = (box.y / video.videoHeight) * overlay.height;
+          const sw = (box.width / video.videoWidth) * overlay.width;
+          const sh = (box.height / video.videoHeight) * overlay.height;
+          overlayCtx.strokeRect(sx,sy,sw,sh);
+        }else if(Array.isArray(box)){
+          overlayCtx.moveTo(box[0].x, box[0].y);
+          box.forEach((p,i)=> i && overlayCtx.lineTo(p.x,p.y));
+          overlayCtx.closePath(); overlayCtx.stroke();
+        }
+      }
+
+      function handleDetected(text, box){
+        // basic filter for Code39 characters
+        text = String(text).trim();
+        if(!text) return;
+        // optional minimal Code39 validation: allowed chars and dashes/spaces
+        const ok = /^[A-Z0-9\- \.$/+%]*$/i.test(text);
+        if(!ok){ /* still accept but mark */ }
+
+        // avoid duplicates in quick succession
+        const now = Date.now();
+        if(lastScanned && lastScanned.text === text && (now - lastScanned.time) < 1500){
+          drawBox(box?.boundingBox || box);
+          return;
+        }
+        lastScanned = {text, time: now};
+        addScanned(text);
+        flashPulse();
+        if(beepToggle.checked) beepAudio.play().catch(()=>{});
+        drawBox(box?.boundingBox || box);
+      }
+
+      // ZXing fallback continuous
+      async function startZXing(deviceId){
+        detectorInfo.textContent = 'ZXing fallback';
+        if(!zxingReader) zxingReader = new ZXing.BrowserMultiFormatReader();
+        try{
+          await zxingReader.decodeFromVideoDevice(deviceId || null, video, (result, err) => {
+            if(result){ handleDetected(result.text, result.resultPoints ? {boundingBox:result.resultPoints} : null); }
+          });
+        }catch(e){ console.warn('zxing start failed',e); }
+      }
+
+      async function startScan(){
+        try{
+          scanning = true;
+          startBtn.disabled = true; stopBtn.disabled = false;
+          const didNative = await setupNative();
+          await startCamera(cameraSelect.value || null);
+          if(didNative){
+            continuousScanNative();
+          }else{
+            // start ZXing fallback
+            detectorInfo.textContent = 'Using ZXing (fallback) — trying to decode Code 39';
+            startZXing(cameraSelect.value || null);
+          }
+        }catch(err){console.error(err); alert('Could not start camera/scanner: '+(err && err.message || err)); stopScan();}
+      }
+
+      function stopScan(){
+        scanning = false;
+        startBtn.disabled = false; stopBtn.disabled = true;
+        if(zxingReader){ try{ zxingReader.reset(); }catch(e){} }
+        stopCamera();
+        overlayCtx.clearRect(0,0,overlay.width,overlay.height);
+      }
+
+      // wire events
+      startBtn.addEventListener('click', async ()=>{ await startScan(); });
+      stopBtn.addEventListener('click', ()=>{ stopScan(); });
+      exportBtn.addEventListener('click', downloadCSV);
+      clearBtn.addEventListener('click', ()=>{ scannedItems=[]; renderList(); });
+
+      cameraSelect.addEventListener('change', async ()=>{
+        if(scanning){ await startScan(); }
+      });
+
+      // initial setup
+      (async function init(){
+        await listCameras();
+        // if no labeled cameras yet, try to prompt for permission once to get labels
+        if(!cameraSelect.options.length){
+          try{ await navigator.mediaDevices.getUserMedia({video:true}); await listCameras(); }catch(e){}
+        }
+        if(cameraSelect.options.length){ cameraSelect.selectedIndex = 0; }
+
+        // make overlay size match video on metadata
+        video.addEventListener('loadedmetadata', fitCanvas);
+
+        // nice small beep waveform (already empty placeholder) — you can replace the src with a short beep file if you'd like
+      })();
+
+      // expose small helpers for debugging
+      window.__scanner = {startScan, stopScan, scannedItems, addScanned};
+
+    })();
   </script>
 </body>
 </html>
