@@ -91,7 +91,7 @@
       <div class="list" id="scannedList" aria-live="polite"></div>
       <div style="margin-top:8px;color:var(--muted);font-size:13px">
         <div>Detected format: <span id="detectorInfo">—</span></div>
-        <div style="margin-top:6px">Tip: allow camera access and prefer the rear camera on mobile for best results.</div>
+        <div style="margin-top:6px">Tip: allow camera access and prefer the rear camera on mobile for best results. Must be served over HTTPS or localhost.</div>
       </div>
     </aside>
 
@@ -140,16 +140,30 @@
 
       async function listCameras(){
         try{
+          if(!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices){
+            cameraSelect.innerHTML = '';
+            const opt = document.createElement('option'); opt.value = ''; opt.textContent = 'Default camera (rear preferred)'; cameraSelect.appendChild(opt);
+            return;
+          }
           const devices = await navigator.mediaDevices.enumerateDevices();
           const cams = devices.filter(d => d.kind === 'videoinput');
           cameraSelect.innerHTML = '';
-          cams.forEach((c,i)=>{
-            const opt = document.createElement('option');
-            opt.value = c.deviceId;
-            opt.textContent = c.label || `Camera ${i+1}`;
-            cameraSelect.appendChild(opt);
-          });
-        }catch(err){console.warn('Could not list devices',err)}
+          // always provide a default option which uses facingMode if deviceId isn't known
+          const defaultOpt = document.createElement('option'); defaultOpt.value = ''; defaultOpt.textContent = 'Default camera (rear preferred)'; cameraSelect.appendChild(defaultOpt);
+          if(cams.length){
+            cams.forEach((c,i)=>{
+              const opt = document.createElement('option');
+              opt.value = c.deviceId || '';
+              // if label isn't available, show a generic name
+              opt.textContent = c.label || `Camera ${i+1}`;
+              cameraSelect.appendChild(opt);
+            });
+          }
+        }catch(err){
+          console.warn('Could not list devices',err);
+          cameraSelect.innerHTML = '';
+          const opt = document.createElement('option'); opt.value = ''; opt.textContent = 'Default camera (rear preferred)'; cameraSelect.appendChild(opt);
+        }
       }
 
       function flashPulse(){
@@ -195,8 +209,15 @@
 
       async function startCamera(deviceId){
         stopCamera();
-        const constraints = {video: deviceId ? {deviceId:{exact:deviceId}} : {facingMode:{ideal:'environment'}} , audio:false};
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        // if deviceId is falsy, use facingMode:environment to prefer rear camera on mobiles
+        const constraints = {video: deviceId ? {deviceId:{exact:deviceId}} : {facingMode:{ideal:'environment'}}, audio:false};
+        try{
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+        }catch(err){
+          // if facingMode failed, try generic getUserMedia as final fallback
+          console.warn('getUserMedia failed with constraints, trying default:', err);
+          stream = await navigator.mediaDevices.getUserMedia({video:true, audio:false});
+        }
         video.srcObject = stream;
         await video.play();
         fitCanvas();
@@ -232,7 +253,6 @@
             if(results && results.length){
               results.forEach(r=>{
                 if(r.format && r.rawValue){
-                  // some implementations may provide confidence; we'll still require confirmations
                   handleDetected(r.rawValue, r.boundingBox || r.cornerPoints || null);
                 }
               });
@@ -259,10 +279,10 @@
         overlayCtx.lineWidth = 3;
         overlayCtx.beginPath();
         if(box.x!==undefined){
-          const sx = (box.x / video.videoWidth) * overlay.width;
-          const sy = (box.y / video.videoHeight) * overlay.height;
-          const sw = (box.width / video.videoWidth) * overlay.width;
-          const sh = (box.height / video.videoHeight) * overlay.height;
+          const sx = (box.x / (video.videoWidth||overlay.width)) * overlay.width;
+          const sy = (box.y / (video.videoHeight||overlay.height)) * overlay.height;
+          const sw = (box.width / (video.videoWidth||overlay.width)) * overlay.width;
+          const sh = (box.height / (video.videoHeight||overlay.height)) * overlay.height;
           overlayCtx.strokeRect(sx,sy,sw,sh);
         }
       }
@@ -278,25 +298,21 @@
       function handleDetected(rawText, rawBox){
         const text = String(rawText).trim();
         if(!text) return;
-        // minimal Code39 allowed chars (loose) - still accept lowercase but normalize
         const normalized = text.toUpperCase();
         const allowed = /^[A-Z0-9\- \.$/+%]*$/.test(normalized);
-        // bounding box area heuristic
         let bbox = null;
         if(rawBox && rawBox.width!==undefined) bbox = rawBox;
         else if(rawBox && Array.isArray(rawBox)) bbox = computeBoundingBoxFromPoints(rawBox);
 
-        const videoArea = video.videoWidth * video.videoHeight || 1;
+        const videoArea = (video.videoWidth || overlay.width) * (video.videoHeight || overlay.height) || 1;
         const area = bbox ? (bbox.width * bbox.height) : 0;
         const areaPct = (area / videoArea) * 100;
         const minAreaPct = Number(minAreaPctEl.value) || 0;
         if(area && areaPct < minAreaPct){
-          // detected area too small -> probably noise
-          drawBox(bbox); // show weak box but don't confirm
+          drawBox(bbox);
           return;
         }
 
-        // add into buffer
         const now = Date.now();
         pruneBuffer();
         const cur = detectionBuffer.get(normalized) || [];
@@ -306,9 +322,7 @@
         const required = Math.max(1, Number(confirmCountEl.value) || 1);
         const count = (detectionBuffer.get(normalized) || []).length;
 
-        // only accept if allowed chars OR area big enough AND confirmations reached
         if(count >= required && (allowed || areaPct >= minAreaPct)){
-          // avoid firing repeatedly for the exact same frame window
           if(lastScanned && lastScanned.text === normalized && (now - lastScanned.time) < 1500) {
             drawBox(bbox);
             return;
@@ -318,10 +332,8 @@
           flashPulse();
           if(beepToggle.checked) beepAudio.play().catch(()=>{});
           drawBox(bbox);
-          // clear buffer for this text so further detections require confirmations again
           detectionBuffer.delete(normalized);
         } else {
-          // not enough confirmations yet — draw a faint box so user knows we're tracking
           drawBox(bbox);
         }
       }
@@ -333,7 +345,6 @@
         try{
           await zxingReader.decodeFromVideoDevice(deviceId || null, video, (result, err) => {
             if(result){
-              // result may contain resultPoints -> compute bbox
               let bbox = null;
               if(result.resultPoints && result.resultPoints.length){
                 const pts = result.resultPoints.map(p=>({x:p.x,y:p.y}));
@@ -350,6 +361,19 @@
           scanning = true;
           startBtn.disabled = true; stopBtn.disabled = false;
           const didNative = await setupNative();
+
+          // ensure we have at least one camera option; if only default present, try prompting for permission once
+          await listCameras();
+          if(cameraSelect.options.length <= 1){
+            try{
+              // prompt permission briefly to allow labels/devices to appear
+              await navigator.mediaDevices.getUserMedia({video:true});
+              await listCameras();
+            }catch(e){
+              // ignore - user may have denied permission
+            }
+          }
+
           await startCamera(cameraSelect.value || null);
           if(didNative){
             continuousScanNative();
