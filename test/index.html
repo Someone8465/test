@@ -26,7 +26,7 @@
     .controls{display:flex;flex-direction:column;gap:10px}
     .controls .row{display:flex;gap:8px;align-items:center}
     label{font-size:13px;color:var(--muted)}
-    select,input[type=checkbox]{background:var(--glass);border:none;padding:8px;border-radius:8px;color:inherit}
+    select,input[type=checkbox],input[type=number]{background:var(--glass);border:none;padding:8px;border-radius:8px;color:inherit}
     button{background:linear-gradient(180deg,var(--accent),#00b36a);border:none;color:#021012;padding:10px 12px;border-radius:10px;font-weight:600;cursor:pointer}
     button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted);}
 
@@ -46,7 +46,7 @@
     <header>
       <div style="flex:1">
         <h1>Code 39 Scanner — Mobile + Desktop</h1>
-        <p class="lead">Fast single-file scanner. Uses native <code>BarcodeDetector</code> when available, falls back to ZXing. Visual feedback + CSV export.</p>
+        <p class="lead">Fast single-file scanner. Uses native <code>BarcodeDetector</code> when available, falls back to ZXing. Visual feedback + CSV export. New: configurable confirmation to reduce false-positives.</p>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         <button id="startBtn">Start</button>
@@ -70,6 +70,12 @@
           <label><input type="checkbox" id="beepToggle" checked /> Beep on scan</label>
           <label><input type="checkbox" id="dedupeToggle" checked /> Debounce duplicates</label>
         </div>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap">
+        <label>Confirmations required: <input id="confirmCount" type="number" min="1" max="6" value="2" style="width:70px;margin-left:8px" /></label>
+        <label>Min area (%) : <input id="minAreaPct" type="number" min="0" max="100" value="1" style="width:70px;margin-left:8px" /></label>
+        <label style="color:var(--muted);font-size:13px;">(Require repeated scans of the same value within a short window.)</label>
       </div>
     </section>
 
@@ -110,6 +116,8 @@
       const flash = document.getElementById('flash');
       const detectorInfo = document.getElementById('detectorInfo');
       const beepAudio = document.getElementById('beepAudio');
+      const confirmCountEl = document.getElementById('confirmCount');
+      const minAreaPctEl = document.getElementById('minAreaPct');
 
       let stream = null;
       let scanning = false;
@@ -120,7 +128,11 @@
       let nativeDetector = null;
       const overlayCtx = overlay.getContext('2d');
 
-      // adjust canvas size to video
+      // buffer to require repeated confirmations for a given text
+      // map: text -> array of timestamps (ms)
+      const detectionBuffer = new Map();
+      const STABILITY_WINDOW_MS = 1500; // how old detections are ignored when counting confirmations
+
       function fitCanvas(){
         overlay.width = video.clientWidth;
         overlay.height = video.clientHeight;
@@ -172,7 +184,8 @@
         if(!scannedItems.length) return alert('No scanned items to export');
         const header = ['code','timestamp'];
         const rows = scannedItems.map(r=>[`"${r.code.replace(/"/g,'""')}"`,r.time]);
-        const csv = [header.join(','), ...rows.map(r=>r.join(','))].join('\n');
+        const csv = [header.join(','), ...rows.map(r=>r.join(','))].join('
+');
         const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -200,7 +213,6 @@
         try{
           if(!('BarcodeDetector' in window)) return false;
           const supported = await BarcodeDetector.getSupportedFormats();
-          // prefer code_39 if available
           if(supported.includes('code_39') || supported.includes('code 39') || supported.includes('code-39')){
             nativeDetector = new BarcodeDetector({formats:['code_39']});
             detectorInfo.textContent = 'Native BarcodeDetector (Code 39)';
@@ -220,7 +232,8 @@
             if(results && results.length){
               results.forEach(r=>{
                 if(r.format && r.rawValue){
-                  handleDetected(r.rawValue, r.boundingBox);
+                  // some implementations may provide confidence; we'll still require confirmations
+                  handleDetected(r.rawValue, r.boundingBox || r.cornerPoints || null);
                 }
               });
             }
@@ -230,6 +243,14 @@
         scanFrame();
       }
 
+      function computeBoundingBoxFromPoints(points){
+        if(!points || !points.length) return null;
+        let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+        points.forEach(p=>{ if(p.x!==undefined && p.y!==undefined){ minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); } });
+        if(minX===Infinity) return null;
+        return {x:minX,y:minY,width:maxX-minX,height:maxY-minY};
+      }
+
       function drawBox(box){
         fitCanvas();
         overlayCtx.clearRect(0,0,overlay.width,overlay.height);
@@ -237,39 +258,72 @@
         overlayCtx.strokeStyle = 'rgba(0,208,132,0.95)';
         overlayCtx.lineWidth = 3;
         overlayCtx.beginPath();
-        // boundingBox may have x,y,width,height or polygon
         if(box.x!==undefined){
           const sx = (box.x / video.videoWidth) * overlay.width;
           const sy = (box.y / video.videoHeight) * overlay.height;
           const sw = (box.width / video.videoWidth) * overlay.width;
           const sh = (box.height / video.videoHeight) * overlay.height;
           overlayCtx.strokeRect(sx,sy,sw,sh);
-        }else if(Array.isArray(box)){
-          overlayCtx.moveTo(box[0].x, box[0].y);
-          box.forEach((p,i)=> i && overlayCtx.lineTo(p.x,p.y));
-          overlayCtx.closePath(); overlayCtx.stroke();
         }
       }
 
-      function handleDetected(text, box){
-        // basic filter for Code39 characters
-        text = String(text).trim();
-        if(!text) return;
-        // optional minimal Code39 validation: allowed chars and dashes/spaces
-        const ok = /^[A-Z0-9\- \.$/+%]*$/i.test(text);
-        if(!ok){ /* still accept but mark */ }
-
-        // avoid duplicates in quick succession
+      function pruneBuffer(){
         const now = Date.now();
-        if(lastScanned && lastScanned.text === text && (now - lastScanned.time) < 1500){
-          drawBox(box?.boundingBox || box);
+        for(const [k,arr] of detectionBuffer.entries()){
+          const filtered = arr.filter(t=> (now - t) <= STABILITY_WINDOW_MS);
+          if(filtered.length) detectionBuffer.set(k, filtered); else detectionBuffer.delete(k);
+        }
+      }
+
+      function handleDetected(rawText, rawBox){
+        const text = String(rawText).trim();
+        if(!text) return;
+        // minimal Code39 allowed chars (loose) - still accept lowercase but normalize
+        const normalized = text.toUpperCase();
+        const allowed = /^[A-Z0-9\- \.$/+%]*$/.test(normalized);
+        // bounding box area heuristic
+        let bbox = null;
+        if(rawBox && rawBox.width!==undefined) bbox = rawBox;
+        else if(rawBox && Array.isArray(rawBox)) bbox = computeBoundingBoxFromPoints(rawBox);
+
+        const videoArea = video.videoWidth * video.videoHeight || 1;
+        const area = bbox ? (bbox.width * bbox.height) : 0;
+        const areaPct = (area / videoArea) * 100;
+        const minAreaPct = Number(minAreaPctEl.value) || 0;
+        if(area && areaPct < minAreaPct){
+          // detected area too small -> probably noise
+          drawBox(bbox); // show weak box but don't confirm
           return;
         }
-        lastScanned = {text, time: now};
-        addScanned(text);
-        flashPulse();
-        if(beepToggle.checked) beepAudio.play().catch(()=>{});
-        drawBox(box?.boundingBox || box);
+
+        // add into buffer
+        const now = Date.now();
+        pruneBuffer();
+        const cur = detectionBuffer.get(normalized) || [];
+        cur.push(now);
+        detectionBuffer.set(normalized, cur);
+
+        const required = Math.max(1, Number(confirmCountEl.value) || 1);
+        const count = (detectionBuffer.get(normalized) || []).length;
+
+        // only accept if allowed chars OR area big enough AND confirmations reached
+        if(count >= required && (allowed || areaPct >= minAreaPct)){
+          // avoid firing repeatedly for the exact same frame window
+          if(lastScanned && lastScanned.text === normalized && (now - lastScanned.time) < 1500) {
+            drawBox(bbox);
+            return;
+          }
+          lastScanned = {text:normalized, time: now};
+          addScanned(normalized);
+          flashPulse();
+          if(beepToggle.checked) beepAudio.play().catch(()=>{});
+          drawBox(bbox);
+          // clear buffer for this text so further detections require confirmations again
+          detectionBuffer.delete(normalized);
+        } else {
+          // not enough confirmations yet — draw a faint box so user knows we're tracking
+          drawBox(bbox);
+        }
       }
 
       // ZXing fallback continuous
@@ -278,7 +332,15 @@
         if(!zxingReader) zxingReader = new ZXing.BrowserMultiFormatReader();
         try{
           await zxingReader.decodeFromVideoDevice(deviceId || null, video, (result, err) => {
-            if(result){ handleDetected(result.text, result.resultPoints ? {boundingBox:result.resultPoints} : null); }
+            if(result){
+              // result may contain resultPoints -> compute bbox
+              let bbox = null;
+              if(result.resultPoints && result.resultPoints.length){
+                const pts = result.resultPoints.map(p=>({x:p.x,y:p.y}));
+                bbox = computeBoundingBoxFromPoints(pts);
+              }
+              handleDetected(result.text, bbox);
+            }
           });
         }catch(e){ console.warn('zxing start failed',e); }
       }
@@ -292,8 +354,7 @@
           if(didNative){
             continuousScanNative();
           }else{
-            // start ZXing fallback
-            detectorInfo.textContent = 'Using ZXing (fallback) — trying to decode Code 39';
+            detectorInfo.textContent = 'Using ZXing (fallback) — requiring repeated confirmations';
             startZXing(cameraSelect.value || null);
           }
         }catch(err){console.error(err); alert('Could not start camera/scanner: '+(err && err.message || err)); stopScan();}
@@ -305,6 +366,7 @@
         if(zxingReader){ try{ zxingReader.reset(); }catch(e){} }
         stopCamera();
         overlayCtx.clearRect(0,0,overlay.width,overlay.height);
+        detectionBuffer.clear();
       }
 
       // wire events
@@ -320,20 +382,15 @@
       // initial setup
       (async function init(){
         await listCameras();
-        // if no labeled cameras yet, try to prompt for permission once to get labels
         if(!cameraSelect.options.length){
           try{ await navigator.mediaDevices.getUserMedia({video:true}); await listCameras(); }catch(e){}
         }
         if(cameraSelect.options.length){ cameraSelect.selectedIndex = 0; }
-
-        // make overlay size match video on metadata
         video.addEventListener('loadedmetadata', fitCanvas);
-
-        // nice small beep waveform (already empty placeholder) — you can replace the src with a short beep file if you'd like
       })();
 
       // expose small helpers for debugging
-      window.__scanner = {startScan, stopScan, scannedItems, addScanned};
+      window.__scanner = {startScan, stopScan, scannedItems, addScanned, detectionBuffer};
 
     })();
   </script>
