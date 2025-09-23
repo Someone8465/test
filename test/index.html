@@ -2,38 +2,43 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Code 39 Barcode Scanner</title>
+  <title>Optimized Dark Mode Code 39 Scanner</title>
   <style>
+    /* Base dark mode styling */
     body {
-      font-family: sans-serif;
-      background: #f5f5f5;
-      color: #333;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.6;
       margin: 0;
-      padding: 20px;
+      padding: 0;
+      background: #121212;
+      color: #e0e0e0;
+    }
+    header {
+      background: #1f1f1f;
+      color: #fff;
+      padding: 30px 20px;
       text-align: center;
+      border-bottom: 2px solid #2d2d2d;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 2em;
+      color: #4db8ff;
+    }
+    main {
+      max-width: 900px;
+      margin: 20px auto;
+      padding: 25px;
+      background: #1e1e1e;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
     }
     h2 {
-      margin-bottom: 10px;
+      color: #4db8ff;
+      border-bottom: 1px solid #2d2d2d;
+      padding-bottom: 5px;
+      margin-top: 20px;
     }
-    #video {
-      position: relative;
-      width: 100%;
-      max-width: 640px;
-      height: 360px;
-      margin: 20px auto;
-      background: #000;
-      overflow: hidden; 
-    }
-
-    #video canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-    }
-
     button, input[type="file"] {
       margin: 5px;
       padding: 10px 15px;
@@ -43,65 +48,99 @@
       cursor: pointer;
     }
     button {
-      background: #0078d4;
-      color: white;
+      background: #4db8ff;
+      color: #121212;
     }
     button:disabled {
-      background: #aaa;
+      background: #555;
       cursor: not-allowed;
     }
     input[type="file"] {
-      background: #eee;
+      background: #2b2b2b;
+      color: #e0e0e0;
+    }
+    #video {
+      position: relative;
+      width: 100%;
+      max-width: 640px;
+      height: 360px;
+      margin: 20px auto;
+      background: #000;
+      overflow: hidden;
+      border-radius: 10px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.5);
+    }
+    #video canvas {
+      position: absolute !important;
+      top: 0;
+      left: 0;
+      width: 100% !important;
+      height: 100% !important;
+      pointer-events: none;
+    }
+    #highlight {
+      position: absolute;
+      border: 3px solid #00ff00;
+      display: none;
+      z-index: 10;
+      pointer-events: none;
+      border-radius: 6px;
     }
     #result {
       margin-top: 10px;
       font-weight: bold;
-      color: green;
+      color: #00ff00;
     }
     table {
       margin: 20px auto;
       border-collapse: collapse;
       width: 80%;
-      background: white;
+      background: #1e1e1e;
+      color: #e0e0e0;
     }
     th, td {
-      border: 1px solid #ccc;
+      border: 1px solid #555;
       padding: 8px;
     }
     th {
-      background: #0078d4;
-      color: white;
+      background: #2d2d2d;
     }
   </style>
 </head>
 <body>
-  <h2>Code 39 Barcode Scanner</h2>
+  <header>
+    <h1>Code 39 Scanner</h1>
+    <p>Optimized dark mode scanner with beep & highlight</p>
+  </header>
 
-  <div>
-    <button id="startBtn">Start Scanner</button>
-    <button id="stopBtn" disabled>Stop Scanner</button>
-    <input id="fileInput" type="file" accept="image/*">
-    <button id="downloadBtn" disabled>Download CSV</button>
-  </div>
+  <main>
+    <h2>Scanner</h2>
+    <div>
+      <button id="startBtn">Start Scanner</button>
+      <button id="stopBtn" disabled>Stop Scanner</button>
+      <input id="fileInput" type="file" accept="image/*">
+      <button id="downloadBtn" disabled>Download CSV</button>
+    </div>
 
-  <div id="video"></div>
+    <div id="video">
+      <div id="highlight"></div>
+    </div>
 
-  <div id="result">—</div>
+    <div id="result">—</div>
 
-  <table id="logTable">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Barcode</th>
-        <th>Format</th>
-        <th>Timestamp</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+    <table id="logTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Barcode</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </main>
 
   <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
-
   <script>
     const startBtn = document.getElementById('startBtn');
     const stopBtn  = document.getElementById('stopBtn');
@@ -110,16 +149,21 @@
     const downloadBtn = document.getElementById('downloadBtn');
     const videoTarget = document.getElementById('video');
     const logTableBody = document.querySelector('#logTable tbody');
+    const highlight = document.getElementById('highlight');
 
     let scanning = false;
     let logData = [];
 
+    // Beep sound
+    const beep = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=');
+
     function logResult(barcode) {
       const timestamp = new Date().toLocaleString();
-      resultEl.textContent = `Last: ${barcode} (Code 39)`;
-      logData.push({ barcode, format: "Code 39", timestamp });
+      resultEl.textContent = `Last: ${barcode}`;
+      logData.push({ barcode, timestamp });
       renderTable();
       downloadBtn.disabled = false;
+      beep.play();
     }
 
     function renderTable() {
@@ -129,7 +173,6 @@
         tr.innerHTML = `
           <td>${i+1}</td>
           <td>${row.barcode}</td>
-          <td>${row.format}</td>
           <td>${row.timestamp}</td>
         `;
         logTableBody.appendChild(tr);
@@ -138,61 +181,70 @@
 
     function startScanner() {
       if (scanning) return;
-      const config = {
+
+      Quagga.init({
         inputStream: {
           name: "Live",
           type: "LiveStream",
           target: videoTarget,
-          constraints: {
-            facingMode: "environment",
-            width: { min: 640 },
-            height: { min: 480 }
-          }
+          constraints: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 360 } },
+          area: { top: "10%", right: "10%", bottom: "10%", left: "10%" }
         },
         locator: { patchSize: "medium", halfSample: true },
-        numOfWorkers: navigator.hardwareConcurrency ? Math.max(1, Math.floor(navigator.hardwareConcurrency/2)) : 2,
-        decoder: {
-          readers: ["code_39_reader"]
-        },
+        numOfWorkers: 1,
+        decoder: { readers: ["code_39_reader"] },
         locate: true
-      };
-      Quagga.init(config, function(err) {
-        if (err) {
-          console.error(err);
-          resultEl.textContent = 'Error starting scanner: ' + (err.message || err);
-          return;
-        }
+      }, function(err) {
+        if (err) { console.error(err); resultEl.textContent = 'Error: '+(err.message||err); return; }
         Quagga.start();
         scanning = true;
         startBtn.disabled = true;
         stopBtn.disabled = false;
         resultEl.textContent = 'Scanning for Code 39...';
       });
+
       Quagga.onDetected(onDetectedHandler);
+      Quagga.onProcessed(drawHighlight);
     }
 
     function stopScanner() {
       if (!scanning) return;
       Quagga.stop();
       Quagga.offDetected(onDetectedHandler);
+      Quagga.offProcessed(drawHighlight);
       scanning = false;
       startBtn.disabled = false;
       stopBtn.disabled = true;
       resultEl.textContent = 'Scanner stopped.';
-      videoTarget.innerHTML = '';
+      videoTarget.innerHTML = '<div id="highlight"></div>';
     }
 
+    let lastCode = null;
     function onDetectedHandler(data) {
       const code = data?.codeResult?.code;
-      if (code) {
-        // Avoid duplicates if scanned twice quickly
-        if (logData.length === 0 || logData[logData.length-1].barcode !== code) {
-          logResult(code);
-        }
+      if (code && code !== lastCode) {
+        lastCode = code;
+        logResult(code);
+        setTimeout(() => lastCode = null, 1000); // avoid duplicates for 1s
       }
     }
 
-    fileInput.addEventListener('change', (e) => {
+    function drawHighlight(result) {
+      if (!result || !result.box) { highlight.style.display = 'none'; return; }
+      const [xMin, yMin, xMax, yMax] = [
+        Math.min(...result.box.map(p => p[0])),
+        Math.min(...result.box.map(p => p[1])),
+        Math.max(...result.box.map(p => p[0])),
+        Math.max(...result.box.map(p => p[1]))
+      ];
+      highlight.style.display = 'block';
+      highlight.style.left = xMin + 'px';
+      highlight.style.top = yMin + 'px';
+      highlight.style.width = (xMax - xMin) + 'px';
+      highlight.style.height = (yMax - yMin) + 'px';
+    }
+
+    fileInput.addEventListener('change', e => {
       const file = e.target.files?.[0];
       if (!file) return;
       const reader = new FileReader();
@@ -205,20 +257,16 @@
         }, function(result) {
           if (result && result.codeResult) {
             logResult(result.codeResult.code);
-          } else {
-            resultEl.textContent = 'No Code 39 barcode detected in image.';
-          }
+          } else { resultEl.textContent = 'No Code 39 barcode detected in image.'; }
         });
       };
       reader.readAsDataURL(file);
     });
 
     function downloadCSV() {
-      let csv = "Index,Barcode,Format,Timestamp\n";
-      logData.forEach((row, i) => {
-        csv += `${i+1},${row.barcode},${row.format},${row.timestamp}\n`;
-      });
-      const blob = new Blob([csv], { type: 'text/csv' });
+      let csv = "Index,Barcode,Timestamp\n";
+      logData.forEach((row,i) => csv += `${i+1},${row.barcode},${row.timestamp}\n`);
+      const blob = new Blob([csv], { type:'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -231,9 +279,7 @@
     stopBtn.addEventListener('click', stopScanner);
     downloadBtn.addEventListener('click', downloadCSV);
 
-    window.addEventListener('beforeunload', () => {
-      if (scanning) stopScanner();
-    });
+    window.addEventListener('beforeunload', () => { if (scanning) stopScanner(); });
   </script>
 </body>
 </html>
