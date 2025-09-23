@@ -3,50 +3,45 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Code 39 Barcode Scanner (Single File)</title>
+  <title>Code 39 Barcode Scanner — Robust Camera Detection</title>
   <style>
-    :root{
-      --bg:#0b0b0d; --surface:#101012; --muted:#9aa0a6; --accent:#00d084; --danger:#ff6b6b; --glass: rgba(255,255,255,0.03);
-    }
+    :root{--bg:#0b0b0d;--surface:#101012;--muted:#9aa0a6;--accent:#00d084;--danger:#ff6b6b;--glass:rgba(255,255,255,0.03)}
     *{box-sizing:border-box}
-    html,body{height:100%;margin:0;background:linear-gradient(180deg,#060607 0%, var(--bg) 100%);color:#e6eef3;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#060607 0%,var(--bg)100%);color:#e6eef3;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial}
     .app{max-width:1100px;margin:18px auto;padding:18px;display:grid;grid-template-columns:1fr 380px;gap:14px}
     header{grid-column:1/3;display:flex;align-items:center;gap:12px}
     h1{font-size:18px;margin:0}
     p.lead{margin:0;color:var(--muted);font-size:13px}
-
     .camera-card{background:var(--surface);border-radius:12px;padding:12px;position:relative;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,0.6)}
     video{width:100%;height:100%;object-fit:cover;border-radius:8px;background:#000}
-    .overlay{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:flex-start;padding:12px;pointer-events:none}
-    .scan-box{width:100%;height:100%;border-radius:8px;box-shadow:inset 0 0 0 2px rgba(255,255,255,0.03)}
-    .flash{position:absolute;inset:0;background:linear-gradient(90deg, rgba(0,0,0,0), rgba(0,0,0,0.35));opacity:0;transition:opacity .35s}
+    .overlay{position:absolute;inset:0;pointer-events:none}
+    .flash{position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,0),rgba(0,0,0,0.35));opacity:0;transition:opacity .35s}
     .pulse{animation:pulse 700ms ease-out}
     @keyframes pulse{0%{opacity:0.95}100%{opacity:0}}
-
-    .controls{display:flex;flex-direction:column;gap:10px}
-    .controls .row{display:flex;gap:8px;align-items:center}
     label{font-size:13px;color:var(--muted)}
     select,input[type=checkbox],input[type=number]{background:var(--glass);border:none;padding:8px;border-radius:8px;color:inherit}
     button{background:linear-gradient(180deg,var(--accent),#00b36a);border:none;color:#021012;padding:10px 12px;border-radius:10px;font-weight:600;cursor:pointer}
-    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted);}
-
+    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
     .side{background:var(--surface);border-radius:12px;padding:12px;height:fit-content}
     .list{max-height:58vh;overflow:auto;margin-top:8px;padding-right:6px}
-    .item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);margin-bottom:8px}
+    .item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.01),transparent);margin-bottom:8px}
     .code{font-family:monospace;font-weight:700}
     .time{font-size:12px;color:var(--muted)}
+    .status{margin-top:8px;font-size:13px;color:var(--muted)}
+    .status strong{color:#fff}
     footer{grid-column:1/3;margin-top:6px;color:var(--muted);font-size:12px}
-
-    /* small screens */
-    @media(max-width:880px){.app{grid-template-columns:1fr;}.side{order:2}.camera-card{order:1}}
+    .controls-row{display:flex;gap:8px;align-items:center}
+    .warning{color:var(--danger)}
+    .small{font-size:12px;padding:6px 8px}
+    @media(max-width:880px){.app{grid-template-columns:1fr}.side{order:2}.camera-card{order:1}}
   </style>
 </head>
 <body>
   <div class="app">
     <header>
       <div style="flex:1">
-        <h1>Code 39 Scanner — Mobile + Desktop</h1>
-        <p class="lead">Fast single-file scanner. Uses native <code>BarcodeDetector</code> when available, falls back to ZXing. Visual feedback + CSV export. New: configurable confirmation to reduce false-positives.</p>
+        <h1>Code 39 Scanner — Robust Camera Detection</h1>
+        <p class="lead">Improved camera detection, explicit permission controls, and clear status messages to help with devices that hide labels until camera permission is granted.</p>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         <button id="startBtn">Start</button>
@@ -61,11 +56,13 @@
         <div id="flash" class="flash"></div>
       </div>
 
-      <div style="display:flex;gap:10px;margin-top:12px;align-items:center;justify-content:space-between">
+      <div style="display:flex;gap:10px;margin-top:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
         <div style="display:flex;gap:10px;align-items:center">
           <label>Camera:</label>
           <select id="cameraSelect"></select>
+          <button id="retryBtn" class="ghost small">Retry devices</button>
         </div>
+
         <div style="display:flex;gap:8px;align-items:center">
           <label><input type="checkbox" id="beepToggle" checked /> Beep on scan</label>
           <label><input type="checkbox" id="dedupeToggle" checked /> Debounce duplicates</label>
@@ -76,7 +73,12 @@
         <label>Confirmations required: <input id="confirmCount" type="number" min="1" max="6" value="2" style="width:70px;margin-left:8px" /></label>
         <label>Min area (%) : <input id="minAreaPct" type="number" min="0" max="100" value="1" style="width:70px;margin-left:8px" /></label>
         <label style="color:var(--muted);font-size:13px;">(Require repeated scans of the same value within a short window.)</label>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <button id="permissionBtn" class="ghost small">Request camera permission</button>
+        </div>
       </div>
+
+      <div class="status" id="status">Status: <strong id="statusText">idle</strong></div>
     </section>
 
     <aside class="side">
@@ -91,332 +93,160 @@
       <div class="list" id="scannedList" aria-live="polite"></div>
       <div style="margin-top:8px;color:var(--muted);font-size:13px">
         <div>Detected format: <span id="detectorInfo">—</span></div>
-        <div style="margin-top:6px">Tip: allow camera access and prefer the rear camera on mobile for best results. Must be served over HTTPS or localhost.</div>
+        <div style="margin-top:6px">Tip: allow camera access and prefer the rear camera on mobile for best results. Must be served over HTTPS or <code>localhost</code>.</div>
       </div>
     </aside>
 
-    <footer>Built for speed. Let me know if you want keyboard-input (USB barcode gun) support, or JSON export.</footer>
+    <footer>Built for speed. If it still fails, open the browser console and paste any errors here and I'll analyze them.</footer>
   </div>
 
-  <!-- ZXing fallback (only used if native BarcodeDetector isn't available) -->
+  <!-- ZXing fallback -->
   <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
   <audio id="beepAudio" src="data:audio/wav;base64,UklGRhQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YWQAAAAA"></audio>
+
   <script>
-    (function(){
-      const video = document.getElementById('video');
-      const overlay = document.getElementById('overlayCanvas');
-      const startBtn = document.getElementById('startBtn');
-      const stopBtn = document.getElementById('stopBtn');
-      const cameraSelect = document.getElementById('cameraSelect');
-      const scannedList = document.getElementById('scannedList');
-      const exportBtn = document.getElementById('exportBtn');
-      const clearBtn = document.getElementById('clearBtn');
-      const beepToggle = document.getElementById('beepToggle');
-      const dedupeToggle = document.getElementById('dedupeToggle');
-      const flash = document.getElementById('flash');
-      const detectorInfo = document.getElementById('detectorInfo');
-      const beepAudio = document.getElementById('beepAudio');
-      const confirmCountEl = document.getElementById('confirmCount');
-      const minAreaPctEl = document.getElementById('minAreaPct');
+  (function(){
+    const video = document.getElementById('video');
+    const overlay = document.getElementById('overlayCanvas');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const cameraSelect = document.getElementById('cameraSelect');
+    const retryBtn = document.getElementById('retryBtn');
+    const permissionBtn = document.getElementById('permissionBtn');
+    const scannedList = document.getElementById('scannedList');
+    const exportBtn = document.getElementById('exportBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const beepToggle = document.getElementById('beepToggle');
+    const dedupeToggle = document.getElementById('dedupeToggle');
+    const flash = document.getElementById('flash');
+    const detectorInfo = document.getElementById('detectorInfo');
+    const beepAudio = document.getElementById('beepAudio');
+    const confirmCountEl = document.getElementById('confirmCount');
+    const minAreaPctEl = document.getElementById('minAreaPct');
+    const statusText = document.getElementById('statusText');
 
-      let stream = null;
-      let scanning = false;
-      let lastScanned = null;
-      let scannedItems = []; // {code, time}
-      let zxingReader = null;
-      let useNative = false;
-      let nativeDetector = null;
-      const overlayCtx = overlay.getContext('2d');
+    let stream = null; let scanning = false; let lastScanned = null; let scannedItems = [];
+    let zxingReader = null; let nativeDetector = null; const overlayCtx = overlay.getContext('2d');
+    const detectionBuffer = new Map(); const STABILITY_WINDOW_MS = 1500;
 
-      // buffer to require repeated confirmations for a given text
-      // map: text -> array of timestamps (ms)
-      const detectionBuffer = new Map();
-      const STABILITY_WINDOW_MS = 1500; // how old detections are ignored when counting confirmations
+    function setStatus(s, isError=false){ statusText.textContent = s; statusText.style.color = isError ? 'var(--danger)' : ''; }
 
-      function fitCanvas(){
-        overlay.width = video.clientWidth;
-        overlay.height = video.clientHeight;
-      }
+    function fitCanvas(){ overlay.width = video.clientWidth; overlay.height = video.clientHeight; }
 
-      async function listCameras(){
-        try{
-          if(!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices){
-            cameraSelect.innerHTML = '';
-            const opt = document.createElement('option'); opt.value = ''; opt.textContent = 'Default camera (rear preferred)'; cameraSelect.appendChild(opt);
-            return;
-          }
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          const cams = devices.filter(d => d.kind === 'videoinput');
-          cameraSelect.innerHTML = '';
-          // always provide a default option which uses facingMode if deviceId isn't known
-          const defaultOpt = document.createElement('option'); defaultOpt.value = ''; defaultOpt.textContent = 'Default camera (rear preferred)'; cameraSelect.appendChild(defaultOpt);
-          if(cams.length){
-            cams.forEach((c,i)=>{
-              const opt = document.createElement('option');
-              opt.value = c.deviceId || '';
-              // if label isn't available, show a generic name
-              opt.textContent = c.label || `Camera ${i+1}`;
-              cameraSelect.appendChild(opt);
-            });
-          }
-        }catch(err){
-          console.warn('Could not list devices',err);
-          cameraSelect.innerHTML = '';
-          const opt = document.createElement('option'); opt.value = ''; opt.textContent = 'Default camera (rear preferred)'; cameraSelect.appendChild(opt);
+    async function listCameras(){
+      cameraSelect.innerHTML = '';
+      try{
+        if(!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices){
+          cameraSelect.appendChild(new Option('Default camera (rear preferred)',''));
+          setStatus('enumerateDevices not supported — using default camera');
+          return;
         }
-      }
-
-      function flashPulse(){
-        flash.classList.add('pulse');
-        setTimeout(()=>flash.classList.remove('pulse'),800);
-      }
-
-      function addScanned(code){
-        const now = new Date();
-        if(dedupeToggle.checked){
-          if(scannedItems.length && scannedItems[0].code === code) return; // simple dedupe recent
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d => d.kind === 'videoinput');
+        // Always add a default option so there is at least one choice
+        cameraSelect.appendChild(new Option('Default camera (rear preferred)',''));
+        if(!cams.length){
+          setStatus('No camera labels available — permission may be required');
         }
-        scannedItems.unshift({code, time: now.toISOString()});
-        renderList();
-      }
-
-      function renderList(){
-        scannedList.innerHTML = '';
-        scannedItems.forEach(it=>{
-          const div = document.createElement('div');
-          div.className = 'item';
-          div.innerHTML = `<div><div class="code">${escapeHtml(it.code)}</div><div class="time">${new Date(it.time).toLocaleString()}</div></div><div style="text-align:right;font-size:12px;color:var(--muted)"><button data-code="${escapeHtml(it.code)}" class="ghost small">copy</button></div>`;
-          const btn = div.querySelector('button');
-          btn.addEventListener('click',()=>{navigator.clipboard.writeText(it.code)});
-          scannedList.appendChild(div);
+        cams.forEach((c,i)=>{
+          const label = c.label || `Camera ${i+1}`;
+          cameraSelect.appendChild(new Option(label, c.deviceId || ''));
         });
+      }catch(err){
+        console.warn('listCameras error', err);
+        cameraSelect.innerHTML = '';
+        cameraSelect.appendChild(new Option('Default camera (rear preferred)',''));
+        setStatus('Error enumerating devices — check permissions and HTTPS', true);
       }
+    }
 
-      function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-
-      function downloadCSV(){
-        if(!scannedItems.length) return alert('No scanned items to export');
-        const header = ['code','timestamp'];
-        const rows = scannedItems.map(r=>[`"${r.code.replace(/"/g,'""')}"`,r.time]);
-        const csv = [header.join(','), ...rows.map(r=>r.join(','))].join('
-');
-        const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = `scanned_code39_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
-        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    async function requestPermission(){
+      try{
+        setStatus('Requesting camera permission...');
+        const s = await navigator.mediaDevices.getUserMedia({video:true});
+        // immediately stop tracks — we only wanted permission and device labels
+        s.getTracks().forEach(t=>t.stop());
+        setStatus('Permission granted — refreshing device list');
+        await listCameras();
+      }catch(err){
+        console.warn('permission denied or error', err);
+        setStatus('Permission denied or error — check browser settings', true);
       }
+    }
 
-      async function startCamera(deviceId){
-        stopCamera();
-        // if deviceId is falsy, use facingMode:environment to prefer rear camera on mobiles
-        const constraints = {video: deviceId ? {deviceId:{exact:deviceId}} : {facingMode:{ideal:'environment'}}, audio:false};
+    async function startCamera(deviceId){
+      stopCamera();
+      setStatus('Starting camera...');
+      try{
+        const constraints = deviceId ? {video:{deviceId:{exact:deviceId}}} : {video:{facingMode:{ideal:'environment'}}};
         try{
           stream = await navigator.mediaDevices.getUserMedia(constraints);
         }catch(err){
-          // if facingMode failed, try generic getUserMedia as final fallback
-          console.warn('getUserMedia failed with constraints, trying default:', err);
-          stream = await navigator.mediaDevices.getUserMedia({video:true, audio:false});
+          console.warn('primary getUserMedia failed, trying default', err);
+          stream = await navigator.mediaDevices.getUserMedia({video:true});
         }
-        video.srcObject = stream;
-        await video.play();
-        fitCanvas();
-        window.addEventListener('resize', fitCanvas);
+        video.srcObject = stream; await video.play(); fitCanvas(); setStatus('Camera started');
+      }catch(err){
+        console.error('startCamera failed', err);
+        setStatus('Could not start camera: '+(err && err.message || err), true);
+        throw err;
       }
+      window.addEventListener('resize', fitCanvas);
+    }
 
-      function stopCamera(){
-        if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
-        video.pause(); video.srcObject = null;
-        window.removeEventListener('resize', fitCanvas);
-      }
+    function stopCamera(){ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } video.pause(); video.srcObject=null; window.removeEventListener('resize', fitCanvas); }
 
-      async function setupNative(){
-        try{
-          if(!('BarcodeDetector' in window)) return false;
-          const supported = await BarcodeDetector.getSupportedFormats();
-          if(supported.includes('code_39') || supported.includes('code 39') || supported.includes('code-39')){
-            nativeDetector = new BarcodeDetector({formats:['code_39']});
-            detectorInfo.textContent = 'Native BarcodeDetector (Code 39)';
-            useNative = true;
-            return true;
-          }
-        }catch(e){console.warn('native detector check failed',e)}
-        return false;
-      }
+    async function setupNative(){ if(!('BarcodeDetector' in window)) return false; try{ const supported = await BarcodeDetector.getSupportedFormats(); if(supported.includes('code_39')||supported.includes('code 39')||supported.includes('code-39')){ nativeDetector = new BarcodeDetector({formats:['code_39']}); detectorInfo.textContent='Native BarcodeDetector (Code 39)'; return true; } }catch(e){ console.warn('native setup failed',e);} return false; }
 
-      async function continuousScanNative(){
-        if(!nativeDetector) return;
-        const scanFrame = async()=>{
-          if(!scanning) return;
-          try{
-            const results = await nativeDetector.detect(video);
-            if(results && results.length){
-              results.forEach(r=>{
-                if(r.format && r.rawValue){
-                  handleDetected(r.rawValue, r.boundingBox || r.cornerPoints || null);
-                }
-              });
-            }
-          }catch(e){/* ignore */}
-          requestAnimationFrame(scanFrame);
-        };
-        scanFrame();
-      }
+    async function continuousScanNative(){ if(!nativeDetector) return; const loop = async()=>{ if(!scanning) return; try{ const results = await nativeDetector.detect(video); if(results && results.length){ results.forEach(r=>{ if(r.format && r.rawValue) handleDetected(r.rawValue, r.boundingBox || r.cornerPoints || null); }); } }catch(e){} requestAnimationFrame(loop); }; loop(); }
 
-      function computeBoundingBoxFromPoints(points){
-        if(!points || !points.length) return null;
-        let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-        points.forEach(p=>{ if(p.x!==undefined && p.y!==undefined){ minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); } });
-        if(minX===Infinity) return null;
-        return {x:minX,y:minY,width:maxX-minX,height:maxY-minY};
-      }
+    function computeBoundingBoxFromPoints(points){ if(!points || !points.length) return null; let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity; points.forEach(p=>{ if(p.x!==undefined && p.y!==undefined){ minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); } }); if(minX===Infinity) return null; return {x:minX,y:minY,width:maxX-minX,height:maxY-minY}; }
 
-      function drawBox(box){
-        fitCanvas();
-        overlayCtx.clearRect(0,0,overlay.width,overlay.height);
-        if(!box) return;
-        overlayCtx.strokeStyle = 'rgba(0,208,132,0.95)';
-        overlayCtx.lineWidth = 3;
-        overlayCtx.beginPath();
-        if(box.x!==undefined){
-          const sx = (box.x / (video.videoWidth||overlay.width)) * overlay.width;
-          const sy = (box.y / (video.videoHeight||overlay.height)) * overlay.height;
-          const sw = (box.width / (video.videoWidth||overlay.width)) * overlay.width;
-          const sh = (box.height / (video.videoHeight||overlay.height)) * overlay.height;
-          overlayCtx.strokeRect(sx,sy,sw,sh);
-        }
-      }
+    function drawBox(box, options={faint:false}){ fitCanvas(); overlayCtx.clearRect(0,0,overlay.width,overlay.height); if(!box) return; overlayCtx.strokeStyle = options.faint ? 'rgba(0,208,132,0.45)' : 'rgba(0,208,132,0.95)'; overlayCtx.lineWidth = options.faint?2:3; overlayCtx.beginPath(); const vw = video.videoWidth||overlay.width; const vh = video.videoHeight||overlay.height; if(box.x!==undefined){ const sx=(box.x/vw)*overlay.width; const sy=(box.y/vh)*overlay.height; const sw=(box.width/vw)*overlay.width; const sh=(box.height/vh)*overlay.height; overlayCtx.strokeRect(sx,sy,sw,sh); } }
 
-      function pruneBuffer(){
-        const now = Date.now();
-        for(const [k,arr] of detectionBuffer.entries()){
-          const filtered = arr.filter(t=> (now - t) <= STABILITY_WINDOW_MS);
-          if(filtered.length) detectionBuffer.set(k, filtered); else detectionBuffer.delete(k);
-        }
-      }
+    function flashPulse(){ flash.classList.add('pulse'); setTimeout(()=>flash.classList.remove('pulse'),800); }
 
-      function handleDetected(rawText, rawBox){
-        const text = String(rawText).trim();
-        if(!text) return;
-        const normalized = text.toUpperCase();
-        const allowed = /^[A-Z0-9\- \.$/+%]*$/.test(normalized);
-        let bbox = null;
-        if(rawBox && rawBox.width!==undefined) bbox = rawBox;
-        else if(rawBox && Array.isArray(rawBox)) bbox = computeBoundingBoxFromPoints(rawBox);
+    function pruneBuffer(){ const now=Date.now(); for(const [k,arr] of detectionBuffer.entries()){ const filtered=arr.filter(t=>(now-t)<=STABILITY_WINDOW_MS); if(filtered.length) detectionBuffer.set(k,filtered); else detectionBuffer.delete(k); } }
 
-        const videoArea = (video.videoWidth || overlay.width) * (video.videoHeight || overlay.height) || 1;
-        const area = bbox ? (bbox.width * bbox.height) : 0;
-        const areaPct = (area / videoArea) * 100;
-        const minAreaPct = Number(minAreaPctEl.value) || 0;
-        if(area && areaPct < minAreaPct){
-          drawBox(bbox);
-          return;
-        }
+    function addScanned(code){ const now=new Date(); if(dedupeToggle.checked){ if(scannedItems.length && scannedItems[0].code===code) return; } scannedItems.unshift({code,time:now.toISOString()}); renderList(); }
+    function renderList(){ scannedList.innerHTML=''; scannedItems.forEach(it=>{ const div=document.createElement('div'); div.className='item'; div.innerHTML=`<div><div class="code">${escapeHtml(it.code)}</div><div class="time">${new Date(it.time).toLocaleString()}</div></div><div style="text-align:right;font-size:12px;color:var(--muted)"><button data-code="${escapeHtml(it.code)}" class="ghost small">copy</button></div>`; const btn=div.querySelector('button'); btn.addEventListener('click',()=>{ navigator.clipboard.writeText(it.code); }); scannedList.appendChild(div); }); }
+    function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-        const now = Date.now();
-        pruneBuffer();
-        const cur = detectionBuffer.get(normalized) || [];
-        cur.push(now);
-        detectionBuffer.set(normalized, cur);
+    function downloadCSV(){ if(!scannedItems.length) return alert('No scanned items to export'); const header=['code','timestamp']; const rows=scannedItems.map(r=>[`"${r.code.replace(/"/g,'""')}"`,r.time]); const csv=[header.join(','),...rows.map(r=>r.join(','))].join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`scanned_code39_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
 
-        const required = Math.max(1, Number(confirmCountEl.value) || 1);
-        const count = (detectionBuffer.get(normalized) || []).length;
+    function handleDetected(rawText, rawBox){ const text=String(rawText).trim(); if(!text) return; const normalized=text.toUpperCase(); const allowed=/^[A-Z0-9\- \.$/+%]*$/.test(normalized); let bbox=null; if(rawBox && rawBox.width!==undefined) bbox=rawBox; else if(rawBox && Array.isArray(rawBox)) bbox=computeBoundingBoxFromPoints(rawBox);
+      const videoArea=(video.videoWidth||overlay.width)*(video.videoHeight||overlay.height)||1; const area=bbox?(bbox.width*bbox.height):0; const areaPct=(area/videoArea)*100; const minAreaPct=Number(minAreaPctEl.value)||0; if(area && areaPct < minAreaPct){ drawBox(bbox, {faint:true}); return; }
+      const now=Date.now(); pruneBuffer(); const cur=detectionBuffer.get(normalized)||[]; cur.push(now); detectionBuffer.set(normalized,cur); const required=Math.max(1,Number(confirmCountEl.value)||1); const count=(detectionBuffer.get(normalized)||[]).length; if(count>=required && (allowed || areaPct>=minAreaPct)){
+        if(lastScanned && lastScanned.text===normalized && (now-lastScanned.time)<1500){ drawBox(bbox); return; }
+        lastScanned={text:normalized,time:now}; addScanned(normalized); flashPulse(); if(beepToggle.checked) beepAudio.play().catch(()=>{}); drawBox(bbox); detectionBuffer.delete(normalized);
+      } else { drawBox(bbox, {faint:true}); }
+    }
 
-        if(count >= required && (allowed || areaPct >= minAreaPct)){
-          if(lastScanned && lastScanned.text === normalized && (now - lastScanned.time) < 1500) {
-            drawBox(bbox);
-            return;
-          }
-          lastScanned = {text:normalized, time: now};
-          addScanned(normalized);
-          flashPulse();
-          if(beepToggle.checked) beepAudio.play().catch(()=>{});
-          drawBox(bbox);
-          detectionBuffer.delete(normalized);
-        } else {
-          drawBox(bbox);
-        }
-      }
+    async function startZXing(deviceId){ detectorInfo.textContent='ZXing fallback'; if(!zxingReader) zxingReader=new ZXing.BrowserMultiFormatReader(); try{ await zxingReader.decodeFromVideoDevice(deviceId||null, video, (result, err)=>{ if(result){ let bbox=null; if(result.resultPoints && result.resultPoints.length){ const pts=result.resultPoints.map(p=>({x:p.x,y:p.y})); bbox=computeBoundingBoxFromPoints(pts); } handleDetected(result.text,bbox); } }); }catch(e){ console.warn('zxing start failed',e); }
+    }
 
-      // ZXing fallback continuous
-      async function startZXing(deviceId){
-        detectorInfo.textContent = 'ZXing fallback';
-        if(!zxingReader) zxingReader = new ZXing.BrowserMultiFormatReader();
-        try{
-          await zxingReader.decodeFromVideoDevice(deviceId || null, video, (result, err) => {
-            if(result){
-              let bbox = null;
-              if(result.resultPoints && result.resultPoints.length){
-                const pts = result.resultPoints.map(p=>({x:p.x,y:p.y}));
-                bbox = computeBoundingBoxFromPoints(pts);
-              }
-              handleDetected(result.text, bbox);
-            }
-          });
-        }catch(e){ console.warn('zxing start failed',e); }
-      }
+    async function startScan(){ try{ scanning=true; startBtn.disabled=true; stopBtn.disabled=false; setStatus('Initializing...'); const didNative=await setupNative(); await listCameras(); // if only default is present, ask user to request permission
+      if(cameraSelect.options.length<=1){ setStatus('No cameras discovered — please click "Request camera permission" and retry', true); }
+      await startCamera(cameraSelect.value||null);
+      if(didNative){ continuousScanNative(); } else { detectorInfo.textContent='Using ZXing (fallback) — requiring repeated confirmations'; startZXing(cameraSelect.value||null); }
+    }catch(err){ console.error(err); setStatus('Could not start camera/scanner: '+(err && err.message || err), true); stopScan(); } }
 
-      async function startScan(){
-        try{
-          scanning = true;
-          startBtn.disabled = true; stopBtn.disabled = false;
-          const didNative = await setupNative();
+    function stopScan(){ scanning=false; startBtn.disabled=false; stopBtn.disabled=true; if(zxingReader){ try{ zxingReader.reset(); }catch(e){} } stopCamera(); overlayCtx.clearRect(0,0,overlay.width,overlay.height); detectionBuffer.clear(); setStatus('stopped'); }
 
-          // ensure we have at least one camera option; if only default present, try prompting for permission once
-          await listCameras();
-          if(cameraSelect.options.length <= 1){
-            try{
-              // prompt permission briefly to allow labels/devices to appear
-              await navigator.mediaDevices.getUserMedia({video:true});
-              await listCameras();
-            }catch(e){
-              // ignore - user may have denied permission
-            }
-          }
+    // events
+    startBtn.addEventListener('click', ()=>startScan()); stopBtn.addEventListener('click', ()=>stopScan()); exportBtn.addEventListener('click', ()=>downloadCSV()); clearBtn.addEventListener('click', ()=>{ scannedItems=[]; renderList(); });
+    retryBtn.addEventListener('click', async ()=>{ await listCameras(); setStatus('Device list refreshed'); }); permissionBtn.addEventListener('click', async ()=>{ await requestPermission(); });
+    cameraSelect.addEventListener('change', async ()=>{ if(scanning){ try{ await startCamera(cameraSelect.value||null); }catch(e){} } });
 
-          await startCamera(cameraSelect.value || null);
-          if(didNative){
-            continuousScanNative();
-          }else{
-            detectorInfo.textContent = 'Using ZXing (fallback) — requiring repeated confirmations';
-            startZXing(cameraSelect.value || null);
-          }
-        }catch(err){console.error(err); alert('Could not start camera/scanner: '+(err && err.message || err)); stopScan();}
-      }
-
-      function stopScan(){
-        scanning = false;
-        startBtn.disabled = false; stopBtn.disabled = true;
-        if(zxingReader){ try{ zxingReader.reset(); }catch(e){} }
-        stopCamera();
-        overlayCtx.clearRect(0,0,overlay.width,overlay.height);
-        detectionBuffer.clear();
-      }
-
-      // wire events
-      startBtn.addEventListener('click', async ()=>{ await startScan(); });
-      stopBtn.addEventListener('click', ()=>{ stopScan(); });
-      exportBtn.addEventListener('click', downloadCSV);
-      clearBtn.addEventListener('click', ()=>{ scannedItems=[]; renderList(); });
-
-      cameraSelect.addEventListener('change', async ()=>{
-        if(scanning){ await startScan(); }
-      });
-
-      // initial setup
-      (async function init(){
-        await listCameras();
-        if(!cameraSelect.options.length){
-          try{ await navigator.mediaDevices.getUserMedia({video:true}); await listCameras(); }catch(e){}
-        }
-        if(cameraSelect.options.length){ cameraSelect.selectedIndex = 0; }
-        video.addEventListener('loadedmetadata', fitCanvas);
-      })();
-
-      // expose small helpers for debugging
-      window.__scanner = {startScan, stopScan, scannedItems, addScanned, detectionBuffer};
-
+    (async function init(){ await listCameras(); // Try to detect permission state via Permissions API if available
+      try{ if(navigator.permissions && navigator.permissions.query){ const p = await navigator.permissions.query({name:'camera'}).catch(()=>null); if(p){ if(p.state==='denied') setStatus('Camera permission denied — enable it in browser settings', true); else if(p.state==='granted') setStatus('Camera permission already granted'); else setStatus('Camera permission prompt not yet accepted'); } }
+      }catch(e){}
+      video.addEventListener('loadedmetadata', fitCanvas);
     })();
+
+    // expose for debugging
+    window.__scanner = {startScan, stopScan, scannedItems, detectionBuffer};
+  })();
   </script>
 </body>
 </html>
