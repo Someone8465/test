@@ -1,0 +1,227 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Code 39 Barcode Scanner</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+    }
+    h2 {
+      margin-bottom: 10px;
+    }
+    #video {
+      width: 100%;
+      max-width: 640px;
+      height: auto;
+      margin: 20px auto;
+      background: #000;
+    }
+    button, input[type="file"] {
+      margin: 5px;
+      padding: 10px 15px;
+      font-size: 14px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button {
+      background: #0078d4;
+      color: white;
+    }
+    button:disabled {
+      background: #aaa;
+      cursor: not-allowed;
+    }
+    input[type="file"] {
+      background: #eee;
+    }
+    #result {
+      margin-top: 10px;
+      font-weight: bold;
+      color: green;
+    }
+    table {
+      margin: 20px auto;
+      border-collapse: collapse;
+      width: 80%;
+      background: white;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+    }
+    th {
+      background: #0078d4;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <h2>Code 39 Barcode Scanner</h2>
+
+  <div>
+    <button id="startBtn">Start Scanner</button>
+    <button id="stopBtn" disabled>Stop Scanner</button>
+    <input id="fileInput" type="file" accept="image/*">
+    <button id="downloadBtn" disabled>Download CSV</button>
+  </div>
+
+  <div id="video"></div>
+
+  <div id="result">—</div>
+
+  <table id="logTable">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Barcode</th>
+        <th>Format</th>
+        <th>Timestamp</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
+
+  <script>
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn  = document.getElementById('stopBtn');
+    const resultEl = document.getElementById('result');
+    const fileInput = document.getElementById('fileInput');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const videoTarget = document.getElementById('video');
+    const logTableBody = document.querySelector('#logTable tbody');
+
+    let scanning = false;
+    let logData = [];
+
+    function logResult(barcode) {
+      const timestamp = new Date().toLocaleString();
+      resultEl.textContent = `Last: ${barcode} (Code 39)`;
+      logData.push({ barcode, format: "Code 39", timestamp });
+      renderTable();
+      downloadBtn.disabled = false;
+    }
+
+    function renderTable() {
+      logTableBody.innerHTML = '';
+      logData.forEach((row, i) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${i+1}</td>
+          <td>${row.barcode}</td>
+          <td>${row.format}</td>
+          <td>${row.timestamp}</td>
+        `;
+        logTableBody.appendChild(tr);
+      });
+    }
+
+    function startScanner() {
+      if (scanning) return;
+      const config = {
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: videoTarget,
+          constraints: {
+            facingMode: "environment",
+            width: { min: 640 },
+            height: { min: 480 }
+          }
+        },
+        locator: { patchSize: "medium", halfSample: true },
+        numOfWorkers: navigator.hardwareConcurrency ? Math.max(1, Math.floor(navigator.hardwareConcurrency/2)) : 2,
+        decoder: {
+          readers: ["code_39_reader"]
+        },
+        locate: true
+      };
+      Quagga.init(config, function(err) {
+        if (err) {
+          console.error(err);
+          resultEl.textContent = 'Error starting scanner: ' + (err.message || err);
+          return;
+        }
+        Quagga.start();
+        scanning = true;
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        resultEl.textContent = 'Scanning for Code 39...';
+      });
+      Quagga.onDetected(onDetectedHandler);
+    }
+
+    function stopScanner() {
+      if (!scanning) return;
+      Quagga.stop();
+      Quagga.offDetected(onDetectedHandler);
+      scanning = false;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      resultEl.textContent = 'Scanner stopped.';
+      videoTarget.innerHTML = '';
+    }
+
+    function onDetectedHandler(data) {
+      const code = data?.codeResult?.code;
+      if (code) {
+        // Avoid duplicates if scanned twice quickly
+        if (logData.length === 0 || logData[logData.length-1].barcode !== code) {
+          logResult(code);
+        }
+      }
+    }
+
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function() {
+        Quagga.decodeSingle({
+          src: reader.result,
+          numOfWorkers: 0,
+          inputStream: { size: 800 },
+          decoder: { readers: ["code_39_reader"] }
+        }, function(result) {
+          if (result && result.codeResult) {
+            logResult(result.codeResult.code);
+          } else {
+            resultEl.textContent = 'No Code 39 barcode detected in image.';
+          }
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+
+    function downloadCSV() {
+      let csv = "Index,Barcode,Format,Timestamp\n";
+      logData.forEach((row, i) => {
+        csv += `${i+1},${row.barcode},${row.format},${row.timestamp}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "barcodes.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    startBtn.addEventListener('click', startScanner);
+    stopBtn.addEventListener('click', stopScanner);
+    downloadBtn.addEventListener('click', downloadCSV);
+
+    window.addEventListener('beforeunload', () => {
+      if (scanning) stopScanner();
+    });
+  </script>
+</body>
+</html>
